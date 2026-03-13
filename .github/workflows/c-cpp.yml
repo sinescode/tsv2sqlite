@@ -2,8 +2,6 @@ name: Import Bitcoin Addresses from Artifact to SQLite & Upload to R2
 
 on:
   workflow_dispatch:          # manual trigger
-  # schedule:                 # optional daily run
-  #   - cron: '0 2 * * *'
 
 jobs:
   import:
@@ -12,10 +10,10 @@ jobs:
       - name: Checkout repository (contains C++ code)
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install dependencies (AWS CLI is pre‑installed, so skip it)
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ sqlite3 libsqlite3-dev unzip gzip awscli
+          sudo apt-get install -y g++ sqlite3 libsqlite3-dev unzip gzip
 
       - name: Download artifact (outer zip) from GitHub
         run: |
@@ -26,14 +24,14 @@ jobs:
       - name: Extract outer zip → inner zip
         run: |
           unzip -j artifact.zip -d step1
-          # The outer zip contains "blockchair-bitcoin-addresses.zip" (exact name may vary)
-          # Move it to a known location
-          find step1 -name "*.zip" -exec mv {} ./inner.zip \;
+          # The outer zip contains exactly "blockchair-bitcoin-addresses.zip"
+          mv step1/blockchair-bitcoin-addresses.zip inner.zip
 
       - name: Extract inner zip → .gz
         run: |
           unzip -j inner.zip -d step2
-          find step2 -name "*.gz" -exec mv {} ./input.tsv.gz \;
+          # The inner zip contains "blockchair_bitcoin_addresses_latest.tsv.gz"
+          mv step2/blockchair_bitcoin_addresses_latest.tsv.gz input.tsv.gz
 
       - name: Decompress .gz → .tsv
         run: |
