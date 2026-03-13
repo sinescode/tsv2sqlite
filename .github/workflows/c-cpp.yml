@@ -1,50 +1,59 @@
 name: Import Bitcoin Addresses from Artifact to SQLite & Upload to R2
 
 on:
-  workflow_dispatch:          # manual trigger
+  workflow_dispatch:
 
 jobs:
   import:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository (contains C++ code)
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies (AWS CLI is pre‑installed, so skip it)
+      - name: Install dependencies (AWS CLI is pre-installed)
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ sqlite3 libsqlite3-dev unzip gzip
 
-      - name: Download artifact (outer zip) from GitHub
+      - name: Download artifact from GitHub
         run: |
           curl -L -H "Authorization: token ${{ secrets.GH_PAT }}" \
             "https://api.github.com/repos/sinescode/bitadressa/actions/artifacts/5907316265/zip" \
             -o artifact.zip
+          # Verify it's a real zip (size > 1MB)
+          if [ $(stat -c%s artifact.zip) -lt 1000000 ]; then
+            echo "Downloaded file is too small – check your token or artifact ID"
+            exit 1
+          fi
 
       - name: Extract outer zip → inner zip
         run: |
           unzip -j artifact.zip -d step1
-          # The outer zip contains exactly "blockchair-bitcoin-addresses.zip"
+          # Expecting "blockchair-bitcoin-addresses.zip"
+          if [ ! -f step1/blockchair-bitcoin-addresses.zip ]; then
+            echo "Inner zip not found; contents:"
+            ls -la step1
+            exit 1
+          fi
           mv step1/blockchair-bitcoin-addresses.zip inner.zip
 
       - name: Extract inner zip → .gz
         run: |
           unzip -j inner.zip -d step2
-          # The inner zip contains "blockchair_bitcoin_addresses_latest.tsv.gz"
+          if [ ! -f step2/blockchair_bitcoin_addresses_latest.tsv.gz ]; then
+            echo "GZ file not found; contents:"
+            ls -la step2
+            exit 1
+          fi
           mv step2/blockchair_bitcoin_addresses_latest.tsv.gz input.tsv.gz
 
       - name: Decompress .gz → .tsv
-        run: |
-          gunzip -v input.tsv.gz
-          # Now we have input.tsv
+        run: gunzip -v input.tsv.gz
 
       - name: Compile importer
-        run: |
-          g++ -O2 -std=c++20 tsv_to_sqlite.cpp -lsqlite3 -o tsv_to_sqlite
+        run: g++ -O2 -std=c++20 tsv_to_sqlite.cpp -lsqlite3 -o tsv_to_sqlite
 
       - name: Run importer
-        run: |
-          ./tsv_to_sqlite input.tsv addresses.db
+        run: ./tsv_to_sqlite input.tsv addresses.db
 
       - name: Configure AWS CLI for R2
         run: |
