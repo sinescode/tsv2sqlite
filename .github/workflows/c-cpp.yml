@@ -19,32 +19,42 @@ jobs:
           curl -L -H "Authorization: token ${{ secrets.GH_PAT }}" \
             "https://api.github.com/repos/sinescode/bitadressa/actions/artifacts/5907316265/zip" \
             -o artifact.zip
-          # Verify it's a real zip (size > 1MB)
           if [ $(stat -c%s artifact.zip) -lt 1000000 ]; then
             echo "Downloaded file is too small – check your token or artifact ID"
             exit 1
           fi
 
-      - name: Extract outer zip → inner zip
+      - name: Extract artifact.zip
         run: |
+          mkdir step1
           unzip -j artifact.zip -d step1
-          # Expecting "blockchair-bitcoin-addresses.zip"
-          if [ ! -f step1/blockchair-bitcoin-addresses.zip ]; then
-            echo "Inner zip not found; contents:"
-            ls -la step1
-            exit 1
-          fi
-          mv step1/blockchair-bitcoin-addresses.zip inner.zip
+          echo "Contents of step1:"
+          ls -la step1
 
-      - name: Extract inner zip → .gz
+      - name: Locate .gz file (either directly or inside another zip)
         run: |
-          unzip -j inner.zip -d step2
-          if [ ! -f step2/blockchair_bitcoin_addresses_latest.tsv.gz ]; then
-            echo "GZ file not found; contents:"
+          # If a .gz file exists directly, use it
+          if ls step1/*.gz 1> /dev/null 2>&1; then
+            echo "Found .gz directly"
+            mv step1/*.gz input.tsv.gz
+          else
+            # Otherwise look for a .zip and extract further
+            ZIP_FILE=$(ls step1/*.zip | head -n1)
+            if [ -z "$ZIP_FILE" ]; then
+              echo "No .gz or .zip found in step1"
+              exit 1
+            fi
+            echo "Found inner zip: $ZIP_FILE"
+            mkdir step2
+            unzip -j "$ZIP_FILE" -d step2
+            echo "Contents of step2:"
             ls -la step2
-            exit 1
+            if ! ls step2/*.gz 1> /dev/null 2>&1; then
+              echo "No .gz found inside inner zip"
+              exit 1
+            fi
+            mv step2/*.gz input.tsv.gz
           fi
-          mv step2/blockchair_bitcoin_addresses_latest.tsv.gz input.tsv.gz
 
       - name: Decompress .gz → .tsv
         run: gunzip -v input.tsv.gz
