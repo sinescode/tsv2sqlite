@@ -1,0 +1,61 @@
+name: Import Bitcoin Addresses from Artifact to SQLite & Upload to R2
+
+on:
+  workflow_dispatch:          # manual trigger
+  # schedule:                 # optional daily run
+  #   - cron: '0 2 * * *'
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (contains C++ code)
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ sqlite3 libsqlite3-dev unzip gzip awscli
+
+      - name: Download artifact (outer zip) from GitHub
+        run: |
+          curl -L -H "Authorization: token ${{ secrets.GH_PAT }}" \
+            "https://api.github.com/repos/sinescode/bitadressa/actions/artifacts/5907316265/zip" \
+            -o artifact.zip
+
+      - name: Extract outer zip → inner zip
+        run: |
+          unzip -j artifact.zip -d step1
+          # The outer zip contains "blockchair-bitcoin-addresses.zip" (exact name may vary)
+          # Move it to a known location
+          find step1 -name "*.zip" -exec mv {} ./inner.zip \;
+
+      - name: Extract inner zip → .gz
+        run: |
+          unzip -j inner.zip -d step2
+          find step2 -name "*.gz" -exec mv {} ./input.tsv.gz \;
+
+      - name: Decompress .gz → .tsv
+        run: |
+          gunzip -v input.tsv.gz
+          # Now we have input.tsv
+
+      - name: Compile importer
+        run: |
+          g++ -O2 -std=c++20 tsv_to_sqlite.cpp -lsqlite3 -o tsv_to_sqlite
+
+      - name: Run importer
+        run: |
+          ./tsv_to_sqlite input.tsv addresses.db
+
+      - name: Configure AWS CLI for R2
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.R2_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          aws configure set region auto
+
+      - name: Upload database to R2 with timestamp
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          aws s3 --endpoint-url ${{ secrets.R2_ENDPOINT }} \
+            cp addresses.db s3://sqlitedatabase/addresses_${TIMESTAMP}.db
