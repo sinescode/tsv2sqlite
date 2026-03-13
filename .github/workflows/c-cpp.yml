@@ -60,7 +60,7 @@ jobs:
         run: gunzip -v input.tsv.gz
 
       - name: Compile importer
-        run: g++ -O2 -std=c++20 tsv_to_sqlite.cpp -lsqlite3 -o tsv_to_sqlite
+        run: g++ -O2 -std=c++20 tsv2sqlite.cpp -lsqlite3 -o tsv_to_sqlite
 
       - name: Run importer
         run: ./tsv_to_sqlite input.tsv addresses.db
